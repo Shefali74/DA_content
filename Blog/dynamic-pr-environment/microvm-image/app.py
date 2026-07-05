@@ -426,14 +426,20 @@ def start_hooks_server():
 
 
 if __name__ == "__main__":
-    # Start hooks server in background thread
-    hooks_thread = threading.Thread(target=start_hooks_server, daemon=True)
-    hooks_thread.start()
-    logger.info(f"Hooks server listening on port {HOOKS_PORT}")
+    import time
 
-    # Load config if exists (from a previous /run hook)
+    # Start APP server in background thread (serves user traffic on 8080)
+    app_thread = threading.Thread(
+        target=lambda: app.run(host="0.0.0.0", port=APP_PORT, debug=False),
+        daemon=True,
+    )
+    app_thread.start()
+    logger.info(f"App server started on port {APP_PORT}")
+
+    # Load config if exists
     load_config()
 
-    # Start main app
-    logger.info(f"App server starting on port {APP_PORT}")
-    app.run(host="0.0.0.0", port=APP_PORT, debug=False)
+    # Start hooks server on MAIN THREAD (port 9000)
+    # This MUST be the main thread so it's ready when Lambda sends /ready
+    logger.info(f"Hooks server starting on port {HOOKS_PORT} (main thread)")
+    hooks_app.run(host="0.0.0.0", port=HOOKS_PORT, debug=False)
