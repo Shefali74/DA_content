@@ -179,25 +179,21 @@ jobs:
             const endpoint = '${{ steps.microvm.outputs.endpoint }}';
             const microvmId = '${{ steps.microvm.outputs.microvm_id }}';
             const branch = '${{ github.head_ref }}';
-            
-            const body = `## 🚀 PR Environment Ready!
-
             const proxyUrl = '${{ steps.tf.outputs.proxy_url }}'.replace(/\/$/, '');
-            const previewUrl = proxyUrl ? `${proxyUrl}/${microvmId}/` : endpoint;
-            **Preview URL:** ${previewUrl}
+            const previewUrl = proxyUrl ? (proxyUrl + '/' + microvmId + '/') : endpoint;
 
-            | Detail | Value |
-            |--------|-------|
-            | Branch | \`${branch}\` |
-            | MicroVM | \`${microvmId}\` |
-            | Region | \`${{ env.AWS_REGION }}\` |
-            | Auto-suspend | After 5 min idle |
-            | Auto-resume | On next request |
-
-            > This environment runs on a Lambda MicroVM. It will auto-suspend when idle and resume instantly when you access it again. Environment is destroyed when the PR is closed.
-
-            ---
-            *Deployed by [Dynamic PR Environments](https://github.com/${{ github.repository }})*`;
+            const body = '## 🚀 PR Environment Ready!\n\n'
+              + '**Preview URL:** ' + previewUrl + '\n\n'
+              + '| Detail | Value |\n'
+              + '|--------|-------|\n'
+              + '| Branch | `' + branch + '` |\n'
+              + '| MicroVM | `' + microvmId + '` |\n'
+              + '| Region | `${{ env.AWS_REGION }}` |\n'
+              + '| Auto-suspend | After 5 min idle |\n'
+              + '| Auto-resume | On next request |\n\n'
+              + '> This environment runs on a Lambda MicroVM. It will auto-suspend when idle and resume instantly when you access it again. Environment is destroyed when the PR is closed.\n\n'
+              + '---\n'
+              + '*Deployed by [Dynamic PR Environments](https://github.com/${{ github.repository }})*';
 
             // Find existing bot comment and update, or create new
             const { data: comments } = await github.rest.issues.listComments({
