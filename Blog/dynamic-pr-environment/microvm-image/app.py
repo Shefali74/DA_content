@@ -99,13 +99,10 @@ def hook_run():
 
     logger.info(f"Config: PR #{config['pr_number']} | branch: {config['branch']} | color: {config['accent_color']}")
 
-    # Seed DynamoDB with sample data (skip if data already exists from previous MicroVM)
-    try:
-        seed_sample_data(config)
-    except Exception as e:
-        logger.warning(f"Seed failed (non-fatal): {e}")
-
-    logger.info(f"✅ /run complete — PR #{config['pr_number']} ready for traffic")
+    # Don't call DynamoDB here — hook has a short timeout (1-60s) and DynamoDB
+    # cold-connect can exceed it, causing immediate TERMINATED state.
+    # Data seeding happens lazily on first GET / request.
+    logger.info(f"✅ /run complete — PR #{config['pr_number']} ready")
     return jsonify({"status": "ready"}), 200
 
 
@@ -285,6 +282,11 @@ HTML_TEMPLATE = """
 def index():
     """Render task manager homepage."""
     load_config()
+    # Lazy seed: on first page load, seed sample data if empty
+    try:
+        seed_sample_data(config)
+    except Exception as e:
+        logger.warning(f"Seed failed: {e}")
     tasks = get_tasks()
     return render_template_string(
         HTML_TEMPLATE,
