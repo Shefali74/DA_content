@@ -1,7 +1,7 @@
-FROM python:3.12-slim
+FROM public.ecr.aws/lambda/microvms:al2023-minimal
 
 # System deps
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN microdnf install -y python3 python3-pip && microdnf clean all
 
 # Python deps
 COPY requirements.txt .
@@ -13,4 +13,4 @@ COPY app.py .
 
 EXPOSE 8080
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "120", "app:app"]
+CMD ["python3", "app.py"]

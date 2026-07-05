@@ -1,9 +1,9 @@
 """
 app.py — Dynamic PR Environment running inside a Lambda MicroVM.
 
-Single Flask app on port 8080 serving:
-- Lifecycle hooks (/aws/lambda-microvms/runtime/v1/*)
-- App routes (/, /tasks, /health)
+Two servers:
+- Port 9000: Lifecycle hooks (Lambda sends /ready, /run, /resume, /suspend, /terminate here)
+- Port 8080: App routes (user traffic — /, /tasks, /health)
 
 PR metadata comes via runHookPayload (delivered to /run hook at startup).
 """
@@ -11,6 +11,7 @@ PR metadata comes via runHookPayload (delivered to /run hook at startup).
 import os
 import json
 import logging
+import threading
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template_string
 import boto3
@@ -22,11 +23,9 @@ logger = logging.getLogger(__name__)
 
 # --- Constants ---
 CONFIG_PATH = "/app/config.json"
+HOOKS_PORT = 9000
 APP_PORT = 8080
 REGION = os.environ.get("AWS_REGION", "us-east-1")
-
-# --- Flask App (serves hooks + user traffic on same port) ---
-app = Flask(__name__)
 
 # --- Global config (written by /run hook, read by app) ---
 config = {
@@ -50,26 +49,22 @@ def load_config():
 
 
 # =====================================================
-# LIFECYCLE HOOKS (same Flask app, port 8080)
+# HOOKS SERVER (port 9000)
 # =====================================================
 
-
-@app.before_request
-def log_all_requests():
-    """Log every incoming request for debugging hooks."""
-    logger.info(f">>> REQUEST: {request.method} {request.path} from {request.remote_addr}")
+hooks_app = Flask("hooks")
 
 
-@app.route("/aws/lambda-microvms/runtime/v1/ready", methods=["GET", "POST"])
-@app.route("/ready", methods=["GET", "POST"])
+@hooks_app.route("/aws/lambda-microvms/runtime/v1/ready", methods=["GET", "POST"])
+@hooks_app.route("/ready", methods=["GET", "POST"])
 def hook_ready():
-    """/ready hook — Called during image build. Accepts GET or POST."""
+    """/ready hook — Called during image build. Signals app is initialized."""
     logger.info("=== /ready hook === App initialized, ready for snapshot")
     return jsonify({"status": "ready"}), 200
 
 
-@app.route("/aws/lambda-microvms/runtime/v1/run", methods=["POST"])
-@app.route("/run", methods=["POST"])
+@hooks_app.route("/aws/lambda-microvms/runtime/v1/run", methods=["POST"])
+@hooks_app.route("/run", methods=["POST"])
 def hook_run():
     """
     /run hook — Called once when MicroVM starts from snapshot.
@@ -106,8 +101,8 @@ def hook_run():
     return jsonify({"status": "ready"}), 200
 
 
-@app.route("/aws/lambda-microvms/runtime/v1/resume", methods=["POST"])
-@app.route("/resume", methods=["POST"])
+@hooks_app.route("/aws/lambda-microvms/runtime/v1/resume", methods=["POST"])
+@hooks_app.route("/resume", methods=["POST"])
 def hook_resume():
     """/resume hook — MicroVM waking from SUSPENDED state."""
     load_config()
@@ -115,16 +110,16 @@ def hook_resume():
     return jsonify({"status": "resumed"}), 200
 
 
-@app.route("/aws/lambda-microvms/runtime/v1/suspend", methods=["POST"])
-@app.route("/suspend", methods=["POST"])
+@hooks_app.route("/aws/lambda-microvms/runtime/v1/suspend", methods=["POST"])
+@hooks_app.route("/suspend", methods=["POST"])
 def hook_suspend():
     """/suspend hook — MicroVM going idle."""
     logger.info(f"=== /suspend === PR #{config['pr_number']} — going idle")
     return jsonify({"status": "suspending"}), 200
 
 
-@app.route("/aws/lambda-microvms/runtime/v1/terminate", methods=["POST"])
-@app.route("/terminate", methods=["POST"])
+@hooks_app.route("/aws/lambda-microvms/runtime/v1/terminate", methods=["POST"])
+@hooks_app.route("/terminate", methods=["POST"])
 def hook_terminate():
     """/terminate hook — MicroVM being destroyed."""
     logger.info(f"=== /terminate === PR #{config['pr_number']}")
@@ -142,8 +137,10 @@ def hook_terminate():
 
 
 # =====================================================
-# APP ROUTES (user-facing)
+# APP SERVER (port 8080) — User-facing
 # =====================================================
+
+app = Flask("app")
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -252,7 +249,6 @@ HTML_TEMPLATE = """
 def index():
     """Render task manager homepage."""
     load_config()
-    # Lazy seed on first page load
     try:
         seed_sample_data(config)
     except Exception as e:
@@ -271,7 +267,7 @@ def index():
 
 
 @app.route("/tasks", methods=["GET"])
-def list_tasks():
+def list_tasks_route():
     """API: List all tasks for this PR."""
     load_config()
     return jsonify(get_tasks())
@@ -351,7 +347,7 @@ def seed_sample_data(cfg):
         Limit=1,
     )
     if existing.get("Items"):
-        return  # Data exists, skip
+        return
 
     sample_tasks = [
         "Review authentication flow",
@@ -384,10 +380,22 @@ def cleanup_dynamodb(cfg):
 
 
 # =====================================================
-# STARTUP
+# STARTUP — Both servers
 # =====================================================
+
+def start_hooks_server():
+    """Start the hooks server on port 9000 in a background thread."""
+    logger.info(f"Starting hooks server on port {HOOKS_PORT}")
+    hooks_app.run(host="0.0.0.0", port=HOOKS_PORT, debug=False, use_reloader=False)
+
 
 if __name__ == "__main__":
     load_config()
-    logger.info(f"Starting app on port {APP_PORT} (hooks + user traffic)")
+
+    # Start hooks server FIRST (Lambda sends /ready here)
+    hooks_thread = threading.Thread(target=start_hooks_server, daemon=True)
+    hooks_thread.start()
+
+    # Then start app server (user traffic)
+    logger.info(f"Starting app server on port {APP_PORT}")
     app.run(host="0.0.0.0", port=APP_PORT, debug=False)
