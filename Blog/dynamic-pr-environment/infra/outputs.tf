@@ -22,3 +22,8 @@ output "microvm_execution_role_arn" {
   description = "IAM role ARN for running MicroVMs"
   value       = aws_iam_role.microvm_execution.arn
 }
+
+output "proxy_url" {
+  description = "Auth proxy Function URL for browser-accessible MicroVM access"
+  value       = aws_lambda_function_url.proxy.function_url
+}

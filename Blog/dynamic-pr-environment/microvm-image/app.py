@@ -1,13 +1,11 @@
 """
 app.py — Dynamic PR Environment running inside a Lambda MicroVM.
 
-Architecture:
-- Port 8080: Main app (Flask full-stack — HTML + API + DynamoDB)
-- Port 9000: Lifecycle hooks server (/run, /suspend, /resume, /terminate)
+Two servers:
+- Port 9000: Lifecycle hooks (Lambda sends /ready, /run, /resume, /suspend, /terminate here)
+- Port 8080: App routes (user traffic — /, /tasks, /health)
 
-The app code is baked INTO the MicroVM image (via Dockerfile).
-Each new commit → update-microvm-image → terminate old → run new.
-PR metadata comes via runHookPayload (unique per MicroVM).
+PR metadata comes via runHookPayload (delivered to /run hook at startup).
 """
 
 import os
@@ -37,6 +35,7 @@ config = {
     "accent_color": "#FF9900",
     "dynamodb_table": "pr-environments",
     "microvm_id": "local",
+    "cleanup_data": False,
 }
 
 
@@ -50,24 +49,26 @@ def load_config():
 
 
 # =====================================================
-# LIFECYCLE HOOKS SERVER (Port 9000)
+# HOOKS SERVER (port 9000)
 # =====================================================
 
 hooks_app = Flask("hooks")
 
 
+@hooks_app.route("/aws/lambda-microvms/runtime/v1/ready", methods=["GET", "POST"])
+@hooks_app.route("/ready", methods=["GET", "POST"])
+def hook_ready():
+    """/ready hook — Called during image build. Signals app is initialized."""
+    logger.info("=== /ready hook === App initialized, ready for snapshot")
+    return jsonify({"status": "ready"}), 200
+
+
 @hooks_app.route("/aws/lambda-microvms/runtime/v1/run", methods=["POST"])
+@hooks_app.route("/run", methods=["POST"])
 def hook_run():
     """
     /run hook — Called once when MicroVM starts from snapshot.
-
     Receives: {"microvmId": "...", "runHookPayload": "<json-string>"}
-
-    Responsibilities:
-    1. Parse PR metadata from runHookPayload
-    2. Write config.json (app reads this on every request)
-    3. Seed DynamoDB with sample data if empty
-    4. Return 200 → MicroVM starts accepting external traffic
     """
     body = request.json or {}
     microvm_id = body.get("microvmId", "unknown")
@@ -75,13 +76,11 @@ def hook_run():
 
     logger.info(f"=== /run hook fired === MicroVM: {microvm_id}")
 
-    # Parse payload
     try:
         payload = json.loads(payload_str)
     except json.JSONDecodeError:
         payload = {}
 
-    # Write config
     global config
     config = {
         "pr_number": payload.get("pr_number", "local"),
@@ -98,46 +97,32 @@ def hook_run():
         json.dump(config, f)
 
     logger.info(f"Config: PR #{config['pr_number']} | branch: {config['branch']} | color: {config['accent_color']}")
-
-    # Seed DynamoDB with sample data (skip if data already exists from previous MicroVM)
-    try:
-        seed_sample_data(config)
-    except Exception as e:
-        logger.warning(f"Seed failed (non-fatal): {e}")
-
-    logger.info(f"✅ /run complete — PR #{config['pr_number']} ready for traffic")
+    logger.info(f"✅ /run complete — PR #{config['pr_number']} ready")
     return jsonify({"status": "ready"}), 200
 
 
 @hooks_app.route("/aws/lambda-microvms/runtime/v1/resume", methods=["POST"])
+@hooks_app.route("/resume", methods=["POST"])
 def hook_resume():
-    """
-    /resume hook — MicroVM waking from SUSPENDED state.
-    Reviewer came back to the PR environment after being idle.
-    """
+    """/resume hook — MicroVM waking from SUSPENDED state."""
     load_config()
     logger.info(f"=== /resume === PR #{config['pr_number']} — reviewer returned")
     return jsonify({"status": "resumed"}), 200
 
 
 @hooks_app.route("/aws/lambda-microvms/runtime/v1/suspend", methods=["POST"])
+@hooks_app.route("/suspend", methods=["POST"])
 def hook_suspend():
-    """
-    /suspend hook — MicroVM going idle, about to be snapshotted.
-    Flush any pending state.
-    """
+    """/suspend hook — MicroVM going idle."""
     logger.info(f"=== /suspend === PR #{config['pr_number']} — going idle")
     return jsonify({"status": "suspending"}), 200
 
 
 @hooks_app.route("/aws/lambda-microvms/runtime/v1/terminate", methods=["POST"])
+@hooks_app.route("/terminate", methods=["POST"])
 def hook_terminate():
-    """
-    /terminate hook — MicroVM being destroyed (PR closed or new version deployed).
-    Only cleans DynamoDB if cleanup_data=true in config (set when PR is closed).
-    On version updates (new commit), data is preserved for the next MicroVM.
-    """
-    logger.info(f"=== /terminate === PR #{config['pr_number']} — cleaning up")
+    """/terminate hook — MicroVM being destroyed."""
+    logger.info(f"=== /terminate === PR #{config['pr_number']}")
 
     if config.get("cleanup_data", False):
         try:
@@ -146,16 +131,16 @@ def hook_terminate():
         except Exception as e:
             logger.error(f"Cleanup failed: {e}")
     else:
-        logger.info(f"Skipping data cleanup (version update, not PR close)")
+        logger.info("Skipping data cleanup (version update, not PR close)")
 
     return jsonify({"status": "terminated"}), 200
 
 
 # =====================================================
-# MAIN APP SERVER (Port 8080)
+# APP SERVER (port 8080) — User-facing
 # =====================================================
 
-app = Flask("pr-env")
+app = Flask("app")
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -166,24 +151,16 @@ HTML_TEMPLATE = """
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
-
         .pr-banner {
             background: {{ accent_color }};
-            color: white;
-            padding: 12px 20px;
-            font-size: 13px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            color: white; padding: 12px 20px; font-size: 13px;
+            display: flex; justify-content: space-between; align-items: center;
         }
         .pr-banner strong { font-size: 14px; }
         .pr-banner .meta { opacity: 0.9; }
-
         .container { max-width: 700px; margin: 40px auto; padding: 0 20px; }
-
         h1 { color: #232F3E; margin-bottom: 8px; }
         .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
-
         .add-form { display: flex; gap: 10px; margin-bottom: 30px; }
         .add-form input {
             flex: 1; padding: 10px 14px; border: 1px solid #ddd;
@@ -195,7 +172,6 @@ HTML_TEMPLATE = """
             cursor: pointer; font-size: 14px; font-weight: 500;
         }
         .add-form button:hover { opacity: 0.9; }
-
         .task-list { list-style: none; }
         .task-item {
             background: white; padding: 14px 18px; margin-bottom: 8px;
@@ -208,9 +184,7 @@ HTML_TEMPLATE = """
             background: none; border: none; color: #D13212;
             cursor: pointer; font-size: 18px;
         }
-
         .empty { text-align: center; color: #999; padding: 40px; }
-
         .footer {
             text-align: center; margin-top: 40px; font-size: 12px; color: #999; padding: 20px;
         }
@@ -219,23 +193,16 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="pr-banner">
-        <div>
-            <strong>🔀 PR #{{ pr_number }}</strong> — {{ branch }}
-        </div>
-        <div class="meta">
-            by {{ author }} | Lambda MicroVM PR Environment
-        </div>
+        <div><strong>🔀 PR #{{ pr_number }}</strong> — {{ branch }}</div>
+        <div class="meta">by {{ author }} | Lambda MicroVM PR Environment</div>
     </div>
-
     <div class="container">
         <h1>Task Manager</h1>
-        <p class="subtitle">This is a live preview of PR #{{ pr_number }}. Any code changes in this PR are reflected here.</p>
-
+        <p class="subtitle">Live preview of PR #{{ pr_number }}. Code changes are reflected here.</p>
         <div class="add-form">
             <input type="text" id="taskInput" placeholder="Add a new task..." onkeypress="if(event.key==='Enter')addTask()">
             <button onclick="addTask()">Add</button>
         </div>
-
         <ul class="task-list" id="taskList">
             {% for task in tasks %}
             <li class="task-item">
@@ -250,13 +217,11 @@ HTML_TEMPLATE = """
             <li class="empty">No tasks yet. Add one above!</li>
             {% endif %}
         </ul>
-
         <div class="footer">
             <code>Lambda MicroVM</code> | Table: <code>{{ table_name }}</code> |
             Partition: <code>PR#{{ pr_number }}</code> | MicroVM: <code>{{ microvm_id }}</code>
         </div>
     </div>
-
     <script>
         async function addTask() {
             const input = document.getElementById('taskInput');
@@ -270,7 +235,6 @@ HTML_TEMPLATE = """
             input.value = '';
             location.reload();
         }
-
         async function deleteTask(taskId) {
             await fetch('/tasks/' + taskId, {method: 'DELETE'});
             location.reload();
@@ -285,6 +249,10 @@ HTML_TEMPLATE = """
 def index():
     """Render task manager homepage."""
     load_config()
+    try:
+        seed_sample_data(config)
+    except Exception as e:
+        logger.warning(f"Seed failed: {e}")
     tasks = get_tasks()
     return render_template_string(
         HTML_TEMPLATE,
@@ -299,7 +267,7 @@ def index():
 
 
 @app.route("/tasks", methods=["GET"])
-def list_tasks():
+def list_tasks_route():
     """API: List all tasks for this PR."""
     load_config()
     return jsonify(get_tasks())
@@ -379,7 +347,6 @@ def seed_sample_data(cfg):
         Limit=1,
     )
     if existing.get("Items"):
-        logger.info("Data already exists for this PR — skipping seed")
         return
 
     sample_tasks = [
@@ -400,38 +367,35 @@ def seed_sample_data(cfg):
 
 
 def cleanup_dynamodb(cfg):
-    """Delete all items for this PR from DynamoDB (called by /terminate hook)."""
+    """Delete all items for this PR from DynamoDB."""
     table = get_table()
     response = table.query(
         KeyConditionExpression=Key("PK").eq(f"PR#{cfg['pr_number']}")
     )
     items = response.get("Items", [])
-
     with table.batch_writer() as batch:
         for item in items:
             batch.delete_item(Key={"PK": item["PK"], "SK": item["SK"]})
-
     logger.info(f"Deleted {len(items)} items for PR #{cfg['pr_number']}")
 
 
 # =====================================================
-# STARTUP
+# STARTUP — Both servers
 # =====================================================
 
 def start_hooks_server():
-    """Start lifecycle hooks server on port 9000 (Lambda talks to this)."""
-    hooks_app.run(host="0.0.0.0", port=HOOKS_PORT, debug=False)
+    """Start the hooks server on port 9000 in a background thread."""
+    logger.info(f"Starting hooks server on port {HOOKS_PORT}")
+    hooks_app.run(host="0.0.0.0", port=HOOKS_PORT, debug=False, use_reloader=False)
 
 
 if __name__ == "__main__":
-    # Start hooks server in background thread
-    hooks_thread = threading.Thread(target=start_hooks_server, daemon=True)
-    hooks_thread.start()
-    logger.info(f"Hooks server listening on port {HOOKS_PORT}")
-
-    # Load config if exists (from a previous /run hook)
     load_config()
 
-    # Start main app
-    logger.info(f"App server starting on port {APP_PORT}")
+    # Start hooks server FIRST (Lambda sends /ready here)
+    hooks_thread = threading.Thread(target=start_hooks_server, daemon=True)
+    hooks_thread.start()
+
+    # Then start app server (user traffic)
+    logger.info(f"Starting app server on port {APP_PORT}")
     app.run(host="0.0.0.0", port=APP_PORT, debug=False)

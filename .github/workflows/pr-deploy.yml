@@ -39,6 +39,7 @@ jobs:
           echo "s3_bucket=${{ secrets.S3_BUCKET }}" >> $GITHUB_OUTPUT
           echo "build_role_arn=${{ secrets.MICROVM_BUILD_ROLE_ARN }}" >> $GITHUB_OUTPUT
           echo "execution_role_arn=${{ secrets.MICROVM_EXECUTION_ROLE_ARN }}" >> $GITHUB_OUTPUT
+          echo "proxy_url=${{ secrets.PROXY_URL }}" >> $GITHUB_OUTPUT
 
       - name: Package MicroVM image code
         run: |
@@ -64,6 +65,7 @@ jobs:
           S3_URI="s3://${{ steps.tf.outputs.s3_bucket }}/pr-${{ github.event.number }}/app-code.zip"
           BASE_IMAGE="arn:aws:lambda:${{ env.AWS_REGION }}:aws:microvm-image:al2023-1"
           BUILD_ROLE="${{ steps.tf.outputs.build_role_arn }}"
+          HOOKS='{"port":9000,"microvmImageHooks":{"ready":"ENABLED"},"microvmHooks":{"run":"ENABLED","resume":"ENABLED","suspend":"ENABLED","terminate":"ENABLED"}}'
 
           # Check if image exists
           if aws lambda-microvms get-microvm-image --image-identifier $IMAGE_ARN --region ${{ env.AWS_REGION }} 2>/dev/null; then
@@ -73,6 +75,7 @@ jobs:
               --code-artifact uri=$S3_URI \
               --base-image-arn $BASE_IMAGE \
               --build-role-arn $BUILD_ROLE \
+              --hooks "$HOOKS" \
               --region ${{ env.AWS_REGION }}
           else
             echo "Creating new image..."
@@ -81,6 +84,7 @@ jobs:
               --code-artifact uri=$S3_URI \
               --base-image-arn $BASE_IMAGE \
               --build-role-arn $BUILD_ROLE \
+              --hooks "$HOOKS" \
               --region ${{ env.AWS_REGION }}
           fi
 
@@ -94,11 +98,11 @@ jobs:
               --region ${{ env.AWS_REGION }} \
               --query 'state' --output text 2>/dev/null || echo "UNKNOWN")
             echo "  Attempt $i: state=$STATE"
-            if [ "$STATE" = "AVAILABLE" ] || [ "$STATE" = "CREATE_COMPLETE" ]; then
+            if [ "$STATE" = "CREATED" ] || [ "$STATE" = "UPDATED" ]; then
               echo "✅ Image ready"
               break
             fi
-            if [ "$STATE" = "CREATE_FAILED" ] || [ "$STATE" = "FAILED" ]; then
+            if [ "$STATE" = "CREATE_FAILED" ] || [ "$STATE" = "FAILED" ] || [ "$STATE" = "UPDATE_FAILED" ]; then
               echo "❌ Image build failed"
               exit 1
             fi
@@ -175,23 +179,21 @@ jobs:
             const endpoint = '${{ steps.microvm.outputs.endpoint }}';
             const microvmId = '${{ steps.microvm.outputs.microvm_id }}';
             const branch = '${{ github.head_ref }}';
-            
-            const body = `## 🚀 PR Environment Ready!
+            const proxyUrl = '${{ steps.tf.outputs.proxy_url }}'.replace(/\/$/, '');
+            const previewUrl = proxyUrl ? (proxyUrl + '/' + microvmId + '/') : endpoint;
 
-            **Preview URL:** ${endpoint}
-
-            | Detail | Value |
-            |--------|-------|
-            | Branch | \`${branch}\` |
-            | MicroVM | \`${microvmId}\` |
-            | Region | \`${{ env.AWS_REGION }}\` |
-            | Auto-suspend | After 5 min idle |
-            | Auto-resume | On next request |
-
-            > This environment runs on a Lambda MicroVM. It will auto-suspend when idle and resume instantly when you access it again. Environment is destroyed when the PR is closed.
-
-            ---
-            *Deployed by [Dynamic PR Environments](https://github.com/${{ github.repository }})*`;
+            const body = '## 🚀 PR Environment Ready!\n\n'
+              + '**Preview URL:** ' + previewUrl + '\n\n'
+              + '| Detail | Value |\n'
+              + '|--------|-------|\n'
+              + '| Branch | `' + branch + '` |\n'
+              + '| MicroVM | `' + microvmId + '` |\n'
+              + '| Region | `${{ env.AWS_REGION }}` |\n'
+              + '| Auto-suspend | After 5 min idle |\n'
+              + '| Auto-resume | On next request |\n\n'
+              + '> This environment runs on a Lambda MicroVM. It will auto-suspend when idle and resume instantly when you access it again. Environment is destroyed when the PR is closed.\n\n'
+              + '---\n'
+              + '*Deployed by [Dynamic PR Environments](https://github.com/${{ github.repository }})*';
 
             // Find existing bot comment and update, or create new
             const { data: comments } = await github.rest.issues.listComments({
