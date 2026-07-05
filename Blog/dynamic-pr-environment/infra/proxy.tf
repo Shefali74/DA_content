@@ -1,5 +1,5 @@
 # =============================================================================
-# AUTH PROXY LAMBDA — Browser-accessible proxy for MicroVM endpoints
+# AUTH PROXY LAMBDA + FUNCTION URL — Browser-accessible proxy for MicroVM endpoints
 # =============================================================================
 
 # IAM Role for the proxy Lambda
@@ -69,17 +69,25 @@ resource "aws_lambda_function" "proxy" {
   }
 }
 
-# Function URL (public — no IAM auth, the proxy handles MicroVM auth internally)
+# Function URL (public, no auth)
 resource "aws_lambda_function_url" "proxy" {
   function_name      = aws_lambda_function.proxy.function_name
   authorization_type = "NONE"
 }
 
-# Permission for Function URL to invoke Lambda
-resource "aws_lambda_permission" "proxy_url" {
-  statement_id           = "AllowFunctionURLInvoke"
+# Permission: allow public InvokeFunctionUrl
+resource "aws_lambda_permission" "public_function_url" {
+  statement_id           = "AllowPublicFunctionUrl"
   action                 = "lambda:InvokeFunctionUrl"
   function_name          = aws_lambda_function.proxy.function_name
   principal              = "*"
   function_url_auth_type = "NONE"
+}
+
+# Permission: allow public InvokeFunction (required for Function URL to work)
+resource "aws_lambda_permission" "public_invoke" {
+  statement_id  = "AllowPublicInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.proxy.function_name
+  principal     = "*"
 }
