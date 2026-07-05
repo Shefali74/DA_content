@@ -1,7 +1,7 @@
-FROM public.ecr.aws/lambda/microvms:al2023-minimal
+FROM python:3.12-slim
 
 # System deps
-RUN microdnf install -y python3 python3-pip && microdnf clean all
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
 # Python deps
 COPY requirements.txt .
