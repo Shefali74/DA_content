@@ -54,14 +54,22 @@ def load_config():
 # =====================================================
 
 
-@app.route("/aws/lambda-microvms/runtime/v1/ready", methods=["POST"])
+@app.before_request
+def log_all_requests():
+    """Log every incoming request for debugging hooks."""
+    logger.info(f">>> REQUEST: {request.method} {request.path} from {request.remote_addr}")
+
+
+@app.route("/aws/lambda-microvms/runtime/v1/ready", methods=["GET", "POST"])
+@app.route("/ready", methods=["GET", "POST"])
 def hook_ready():
-    """/ready hook — Called during image build. Signals app is initialized."""
+    """/ready hook — Called during image build. Accepts GET or POST."""
     logger.info("=== /ready hook === App initialized, ready for snapshot")
     return jsonify({"status": "ready"}), 200
 
 
 @app.route("/aws/lambda-microvms/runtime/v1/run", methods=["POST"])
+@app.route("/run", methods=["POST"])
 def hook_run():
     """
     /run hook — Called once when MicroVM starts from snapshot.
@@ -99,6 +107,7 @@ def hook_run():
 
 
 @app.route("/aws/lambda-microvms/runtime/v1/resume", methods=["POST"])
+@app.route("/resume", methods=["POST"])
 def hook_resume():
     """/resume hook — MicroVM waking from SUSPENDED state."""
     load_config()
@@ -107,6 +116,7 @@ def hook_resume():
 
 
 @app.route("/aws/lambda-microvms/runtime/v1/suspend", methods=["POST"])
+@app.route("/suspend", methods=["POST"])
 def hook_suspend():
     """/suspend hook — MicroVM going idle."""
     logger.info(f"=== /suspend === PR #{config['pr_number']} — going idle")
@@ -114,6 +124,7 @@ def hook_suspend():
 
 
 @app.route("/aws/lambda-microvms/runtime/v1/terminate", methods=["POST"])
+@app.route("/terminate", methods=["POST"])
 def hook_terminate():
     """/terminate hook — MicroVM being destroyed."""
     logger.info(f"=== /terminate === PR #{config['pr_number']}")
