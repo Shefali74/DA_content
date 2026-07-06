@@ -15,9 +15,12 @@ and forwards the browser's request with the token attached.
 import json
 import urllib.request
 import urllib.error
+import hashlib
 import boto3
 
 lambda_client = boto3.client("lambda-microvms", region_name="us-east-1")
+dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+TOKEN_TABLE = "pr-environments"
 
 
 def handler(event, context):
@@ -26,12 +29,27 @@ def handler(event, context):
     # Parse path: /<microvm-id>/<rest-of-path>
     raw_path = event.get("rawPath", "/")
     path_parts = raw_path.strip("/").split("/", 1)
+    query_params = event.get("queryStringParameters") or {}
 
     if not path_parts or not path_parts[0].startswith("microvm-"):
         return response(400, "text/plain", "Usage: /<microvm-id>/path\nExample: /microvm-abc123/")
 
     microvm_id = path_parts[0]
     forward_path = "/" + path_parts[1] if len(path_parts) > 1 else "/"
+
+    # Validate access token
+    token = query_params.get("token", "")
+    if not token:
+        return response(401, "text/plain", "Access denied: missing token parameter")
+
+    try:
+        table = dynamodb.Table(TOKEN_TABLE)
+        result = table.get_item(Key={"PK": f"TOKEN#{microvm_id}", "SK": "ACCESS"})
+        stored_token = result.get("Item", {}).get("token", "")
+        if not stored_token or token != stored_token:
+            return response(403, "text/plain", "Access denied: invalid token")
+    except Exception as e:
+        return response(500, "text/plain", f"Token validation error: {str(e)}")
 
     try:
         # Get MicroVM endpoint

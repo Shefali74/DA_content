@@ -123,6 +123,16 @@ resource "aws_iam_role_policy" "github_actions" {
         Resource = "${aws_s3_bucket.artifacts.arn}/*"
       },
       {
+        Sid    = "DynamoDBTokenStore"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query"
+        ]
+        Resource = aws_dynamodb_table.pr_data.arn
+      },
+      {
         Sid    = "MicroVMManage"
         Effect = "Allow"
         Action = [

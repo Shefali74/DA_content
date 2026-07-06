@@ -2,6 +2,25 @@
 # AUTH PROXY LAMBDA + FUNCTION URL — Browser-accessible proxy for MicroVM endpoints
 # =============================================================================
 
+# Build the proxy zip automatically when handler.py changes
+resource "null_resource" "build_proxy_zip" {
+  triggers = {
+    handler_hash = filemd5("${path.module}/../proxy/handler.py")
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      cd ${path.module}/../proxy
+      rm -rf package handler.zip
+      mkdir package
+      pip3 install boto3 -t package/ --quiet
+      cp handler.py package/
+      cd package && zip -r9 ../handler.zip * && cd ..
+      rm -rf package
+    EOT
+  }
+}
+
 # IAM Role for the proxy Lambda
 resource "aws_iam_role" "proxy_lambda" {
   name = "${var.project_name}-proxy-lambda"
@@ -39,6 +58,14 @@ resource "aws_iam_role_policy" "proxy_lambda" {
         Resource = "*"
       },
       {
+        Sid    = "DynamoDBTokenLookup"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem"
+        ]
+        Resource = "arn:aws:dynamodb:us-east-1:*:table/pr-environments"
+      },
+      {
         Sid    = "Logs"
         Effect = "Allow"
         Action = [
@@ -63,6 +90,8 @@ resource "aws_lambda_function" "proxy" {
 
   filename         = "${path.module}/../proxy/handler.zip"
   source_code_hash = filebase64sha256("${path.module}/../proxy/handler.zip")
+
+  depends_on = [null_resource.build_proxy_zip]
 
   tags = {
     Project = var.project_name
