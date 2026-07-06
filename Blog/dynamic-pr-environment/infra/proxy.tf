@@ -12,8 +12,14 @@ resource "null_resource" "build_proxy_zip" {
     command = <<-EOT
       cd ${path.module}/../proxy
       rm -rf package handler.zip
-      mkdir package
-      pip3 install boto3 -t package/ --quiet
+      python3 -m venv .build-venv
+      source .build-venv/bin/activate
+      pip install --upgrade pip --quiet
+      pip install boto3 --no-cache-dir --quiet
+      mkdir -p package
+      pip install boto3 -t package/ --no-cache-dir --quiet
+      deactivate
+      rm -rf .build-venv
       cp handler.py package/
       cd package && zip -r9 ../handler.zip * && cd ..
       rm -rf package
