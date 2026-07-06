@@ -41,6 +41,21 @@ jobs:
             aws lambda-microvms terminate-microvm \
               --microvm-identifier "$MICROVM_ID" \
               --region ${{ env.AWS_REGION }} || true
+
+            # Wait for MicroVM to fully terminate before deleting image
+            echo "Waiting for MicroVM to terminate..."
+            for i in $(seq 1 30); do
+              STATE=$(aws lambda-microvms get-microvm \
+                --microvm-identifier "$MICROVM_ID" \
+                --region ${{ env.AWS_REGION }} \
+                --query 'state' --output text 2>/dev/null || echo "TERMINATED")
+              if [ "$STATE" = "TERMINATED" ] || [ "$STATE" = "None" ]; then
+                echo "MicroVM terminated"
+                break
+              fi
+              echo "  State: $STATE (attempt $i/30)..."
+              sleep 5
+            done
           else
             echo "No MicroVM mapping found for PR #${{ github.event.number }}"
           fi
