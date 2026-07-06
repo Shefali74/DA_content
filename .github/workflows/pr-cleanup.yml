@@ -28,6 +28,8 @@ jobs:
       - name: Find and terminate MicroVM for this PR
         run: |
           echo "🗑️ Cleaning up PR #${{ github.event.number }} environment..."
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          IMAGE_ARN="arn:aws:lambda:${{ env.AWS_REGION }}:${ACCOUNT_ID}:microvm-image:${{ env.IMAGE_NAME }}"
 
           # Look up the MicroVM for this PR from DynamoDB mapping
           MICROVM_ID=$(aws dynamodb get-item \
@@ -41,26 +43,42 @@ jobs:
             aws lambda-microvms terminate-microvm \
               --microvm-identifier "$MICROVM_ID" \
               --region ${{ env.AWS_REGION }} || true
-
-            # Wait for MicroVM to fully terminate before deleting image
-            echo "Waiting for MicroVM to terminate..."
-            for i in $(seq 1 30); do
-              STATE=$(aws lambda-microvms get-microvm \
-                --microvm-identifier "$MICROVM_ID" \
-                --region ${{ env.AWS_REGION }} \
-                --query 'state' --output text 2>/dev/null || echo "TERMINATED")
-              if [ "$STATE" = "TERMINATED" ] || [ "$STATE" = "None" ]; then
-                echo "MicroVM terminated"
-                break
-              fi
-              echo "  State: $STATE (attempt $i/30)..."
-              sleep 5
-            done
           else
             echo "No MicroVM mapping found for PR #${{ github.event.number }}"
           fi
 
-          echo "✅ MicroVM(s) terminated"
+          # Also terminate any MicroVMs still running on this PR's image
+          echo "Checking for any MicroVMs running on image: $IMAGE_ARN"
+          RUNNING_MICROVMS=$(aws lambda-microvms list-microvms \
+            --region ${{ env.AWS_REGION }} \
+            --query "items[?imageArn=='${IMAGE_ARN}' && state!='TERMINATED'].microvmId" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -n "$RUNNING_MICROVMS" ] && [ "$RUNNING_MICROVMS" != "None" ]; then
+            for MVM_ID in $RUNNING_MICROVMS; do
+              echo "Terminating leftover MicroVM: $MVM_ID"
+              aws lambda-microvms terminate-microvm \
+                --microvm-identifier "$MVM_ID" \
+                --region ${{ env.AWS_REGION }} || true
+            done
+          fi
+
+          # Wait for all MicroVMs to reach TERMINATED state
+          echo "Waiting for MicroVMs to fully terminate..."
+          for i in $(seq 1 30); do
+            STILL_RUNNING=$(aws lambda-microvms list-microvms \
+              --region ${{ env.AWS_REGION }} \
+              --query "items[?imageArn=='${IMAGE_ARN}' && state!='TERMINATED'].microvmId" \
+              --output text 2>/dev/null || echo "")
+            if [ -z "$STILL_RUNNING" ] || [ "$STILL_RUNNING" = "None" ]; then
+              echo "All MicroVMs terminated"
+              break
+            fi
+            echo "  Still running (attempt $i/30): $STILL_RUNNING"
+            sleep 10
+          done
+
+          echo "✅ MicroVM cleanup complete"
 
       - name: Delete MicroVM image for this PR
         continue-on-error: true
@@ -68,10 +86,18 @@ jobs:
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           IMAGE_ARN="arn:aws:lambda:${{ env.AWS_REGION }}:${ACCOUNT_ID}:microvm-image:${{ env.IMAGE_NAME }}"
           echo "Deleting image: $IMAGE_ARN"
-          aws lambda-microvms delete-microvm-image \
-            --image-identifier "$IMAGE_ARN" \
-            --region ${{ env.AWS_REGION }} || true
-          echo "✅ Image deleted"
+
+          # Retry delete up to 3 times (in case termination is still finalizing)
+          for attempt in 1 2 3; do
+            if aws lambda-microvms delete-microvm-image \
+              --image-identifier "$IMAGE_ARN" \
+              --region ${{ env.AWS_REGION }} 2>&1; then
+              echo "✅ Image deleted"
+              break
+            fi
+            echo "Delete attempt $attempt failed, waiting 15s..."
+            sleep 15
+          done
 
       - name: Clean up DynamoDB data for this PR
         run: |
@@ -89,7 +115,6 @@ jobs:
           if [ -z "$ITEMS" ]; then
             echo "No data found for PR #${{ github.event.number }}"
           else
-            COUNT=0
             echo "$ITEMS" | while read -r item; do
               PK=$(echo $item | jq -r '.PK.S')
               SK=$(echo $item | jq -r '.SK.S')
@@ -97,10 +122,15 @@ jobs:
                 --table-name pr-environments \
                 --key "{\"PK\":{\"S\":\"$PK\"},\"SK\":{\"S\":\"$SK\"}}" \
                 --region ${{ env.AWS_REGION }}
-              COUNT=$((COUNT+1))
             done
             echo "✅ Deleted items for PR #${{ github.event.number }}"
           fi
+
+          # Also clean up the token and mapping entries
+          aws dynamodb delete-item \
+            --table-name pr-environments \
+            --key "{\"PK\":{\"S\":\"MICROVM#PR${{ github.event.number }}\"},\"SK\":{\"S\":\"MAPPING\"}}" \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || true
 
       - name: Clean up S3 artifacts
         continue-on-error: true
