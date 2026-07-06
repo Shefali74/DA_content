@@ -198,7 +198,7 @@ HTML_TEMPLATE = """
     </div>
     <div class="container">
         <h1>Task Manager</h1>
-        <p class="subtitle">Live preview of PR #{{ pr_number }}. Code changes are reflected here.</p>
+        <p class="subtitle">Live preview of PR #{{ pr_number }}. 🔒 Secured with token auth. Changes reflected instantly.</p>
         <div class="add-form">
             <input type="text" id="taskInput" placeholder="Add a new task..." onkeypress="if(event.key==='Enter')addTask()">
             <button onclick="addTask()">Add</button>
