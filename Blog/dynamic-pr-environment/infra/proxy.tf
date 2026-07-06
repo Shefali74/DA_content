@@ -95,7 +95,7 @@ resource "aws_lambda_function" "proxy" {
   memory_size   = 256
 
   filename         = "${path.module}/../proxy/handler.zip"
-  source_code_hash = filebase64sha256("${path.module}/../proxy/handler.zip")
+  source_code_hash = filebase64sha256("${path.module}/../proxy/handler.py")
 
   depends_on = [null_resource.build_proxy_zip]
 
