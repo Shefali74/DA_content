@@ -11,13 +11,18 @@ resource "null_resource" "build_proxy_zip" {
   provisioner "local-exec" {
     command = <<-EOT
       cd ${path.module}/../proxy
-      rm -rf package handler.zip
-      python3 -m venv .build-venv
+      rm -rf package handler.zip .build-venv
+      # Use Python 3.10+ (required for boto3 with lambda-microvms service)
+      # Try python3.12, python3.11, python3.10, then fall back to python3
+      PYTHON=$(command -v python3.12 || command -v python3.11 || command -v python3.10 || command -v python3)
+      echo "Using Python: $PYTHON ($($PYTHON --version))"
+      $PYTHON -m venv .build-venv
       source .build-venv/bin/activate
       pip install --upgrade pip --quiet
-      pip install boto3 --no-cache-dir --quiet
+      pip install "boto3>=1.35.0" --no-cache-dir --quiet --upgrade
       mkdir -p package
-      pip install boto3 -t package/ --no-cache-dir --quiet
+      pip install "boto3>=1.35.0" -t package/ --no-cache-dir --quiet --upgrade
+      echo "Bundled boto3 version: $(python3 -c 'import importlib.metadata; print(importlib.metadata.version("boto3"))' 2>/dev/null || pip show boto3 | grep Version)"
       deactivate
       rm -rf .build-venv
       cp handler.py package/
