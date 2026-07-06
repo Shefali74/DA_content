@@ -150,45 +150,52 @@ HTML_TEMPLATE = """
     <title>PR #{{ pr_number }} — Task Manager</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: #f0fdf4; color: #1a2e1a; }
         .pr-banner {
-            background: {{ accent_color }};
-            color: white; padding: 12px 20px; font-size: 13px;
+            background: linear-gradient(135deg, #16a34a 0%, #059669 100%);
+            color: white; padding: 18px 28px; font-size: 15px;
             display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 4px solid #15803d;
         }
-        .pr-banner strong { font-size: 14px; }
-        .pr-banner .meta { opacity: 0.9; }
-        .container { max-width: 700px; margin: 40px auto; padding: 0 20px; }
-        h1 { color: #232F3E; margin-bottom: 8px; }
-        .subtitle { color: #666; margin-bottom: 30px; font-size: 14px; }
-        .add-form { display: flex; gap: 10px; margin-bottom: 30px; }
+        .pr-banner strong { font-size: 18px; font-weight: 700; }
+        .pr-banner .meta { opacity: 0.9; font-size: 13px; }
+        .container { max-width: 720px; margin: 50px auto; padding: 0 24px; }
+        h1 { color: #14532d; margin-bottom: 12px; font-size: 36px; font-weight: 800; }
+        .subtitle { color: #4d7c4d; margin-bottom: 35px; font-size: 16px; line-height: 1.5; }
+        .add-form { display: flex; gap: 12px; margin-bottom: 35px; }
         .add-form input {
-            flex: 1; padding: 10px 14px; border: 1px solid #ddd;
-            border-radius: 6px; font-size: 14px;
+            flex: 1; padding: 14px 18px; border: 2px solid #86efac;
+            border-radius: 12px; font-size: 15px; background: white;
         }
+        .add-form input:focus { outline: none; border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.1); }
         .add-form button {
-            padding: 10px 20px; background: {{ accent_color }};
-            color: white; border: none; border-radius: 6px;
-            cursor: pointer; font-size: 14px; font-weight: 500;
+            padding: 14px 28px; background: #16a34a;
+            color: white; border: none; border-radius: 12px;
+            cursor: pointer; font-size: 15px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 1px;
         }
-        .add-form button:hover { opacity: 0.9; }
+        .add-form button:hover { background: #15803d; transform: scale(1.02); }
         .task-list { list-style: none; }
         .task-item {
-            background: white; padding: 14px 18px; margin-bottom: 8px;
-            border-radius: 8px; border: 1px solid #eee;
+            background: white; padding: 18px 22px; margin-bottom: 12px;
+            border-radius: 14px; border: 2px solid #bbf7d0;
             display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
         }
-        .task-item .task-text { font-size: 14px; color: #333; }
-        .task-item .task-time { font-size: 11px; color: #999; }
+        .task-item:hover { border-color: #16a34a; box-shadow: 0 4px 12px rgba(22,163,74,0.1); }
+        .task-item .task-text { font-size: 16px; color: #1a2e1a; font-weight: 500; }
+        .task-item .task-time { font-size: 12px; color: #6b8f6b; margin-top: 4px; }
         .task-item .delete-btn {
-            background: none; border: none; color: #D13212;
-            cursor: pointer; font-size: 18px;
+            background: #fef2f2; border: none; color: #dc2626;
+            cursor: pointer; font-size: 20px; width: 32px; height: 32px;
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
         }
-        .empty { text-align: center; color: #999; padding: 40px; }
+        .task-item .delete-btn:hover { background: #dc2626; color: white; }
+        .empty { text-align: center; color: #6b8f6b; padding: 50px; font-size: 16px; }
         .footer {
-            text-align: center; margin-top: 40px; font-size: 12px; color: #999; padding: 20px;
+            text-align: center; margin-top: 50px; font-size: 12px; color: #6b8f6b; padding: 20px;
         }
-        .footer code { background: #eee; padding: 2px 6px; border-radius: 3px; }
+        .footer code { background: #dcfce7; color: #15803d; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -197,8 +204,8 @@ HTML_TEMPLATE = """
         <div class="meta">by {{ author }} | Lambda MicroVM PR Environment</div>
     </div>
     <div class="container">
-        <h1>Task Manager</h1>
-        <p class="subtitle">Live preview of PR #{{ pr_number }}. 🔒 Secured with token auth. Changes reflected instantly.</p>
+        <h1>Task Garden 🌱</h1>
+        <p class="subtitle">Grow your tasks, harvest your productivity. PR #{{ pr_number }} running on Lambda MicroVM.</p>
         <div class="add-form">
             <input type="text" id="taskInput" placeholder="Add a new task..." onkeypress="if(event.key==='Enter')addTask()">
             <button onclick="addTask()">Add</button>
@@ -227,7 +234,7 @@ HTML_TEMPLATE = """
             const input = document.getElementById('taskInput');
             const title = input.value.trim();
             if (!title) return;
-            await fetch('/tasks', {
+            await fetch('tasks', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({title: title})
@@ -236,7 +243,7 @@ HTML_TEMPLATE = """
             location.reload();
         }
         async function deleteTask(taskId) {
-            await fetch('/tasks/' + taskId, {method: 'DELETE'});
+            await fetch('tasks/' + taskId, {method: 'DELETE'});
             location.reload();
         }
     </script>
@@ -399,3 +406,4 @@ if __name__ == "__main__":
     # Then start app server (user traffic)
     logger.info(f"Starting app server on port {APP_PORT}")
     app.run(host="0.0.0.0", port=APP_PORT, debug=False)
+
