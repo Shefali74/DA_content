@@ -1,13 +1,58 @@
 # Dynamic PR Environments with Lambda MicroVMs
 
-Each PR gets its own isolated preview environment powered by AWS Lambda MicroVMs. Reviewers click a link in the PR comment and see the app running with that PR's code. PR closes, environment dies. Costs $0 when idle.
+Each PR gets its own isolated preview environment. Reviewers click a link in the PR comment. PR closes, everything is destroyed. Costs $0 when idle.
 
-## What It Does
+**Full walkthrough:** [I Built PR Preview Environments with AWS Lambda MicroVMs and Cut Staging Costs by 78%](https://dev.to/aws/i-built-pr-preview-environments-with-aws-lambda-microvms-and-cut-staging-costs-by-78-2d3i)
 
-- PR opened/pushed: GitHub Actions builds a MicroVM image, runs it, posts a preview URL to the PR comment
-- Reviewer clicks link: Auth proxy validates token, forwards to MicroVM
-- 5 min idle: MicroVM auto-suspends ($0 compute). Reviewer comes back, resumes in <2s
-- PR closed: MicroVM terminated, DynamoDB data deleted, S3 artifacts removed
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        PR Opened / Push                              │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  GitHub Actions (OIDC → AWS)                                        │
+│                                                                     │
+│  1. zip code → S3                                                   │
+│  2. update-microvm-image (builds new snapshot)                      │
+│  3. terminate old MicroVM                                           │
+│  4. run-microvm (starts from snapshot, <2s)                         │
+│  5. generate access token → DynamoDB                                │
+│  6. post preview URL to PR comment                                  │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  Reviewer clicks PR link                                            │
+│                                                                     │
+│  Browser → Lambda Function URL (auth proxy)                         │
+│         → validates token from DynamoDB                             │
+│         → generates JWE auth token                                  │
+│         → forwards request to MicroVM                               │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  Lambda MicroVM (Flask app on port 8080)                            │
+│                                                                     │
+│  - Lifecycle hooks on port 9000 (/run, /suspend, /resume, /terminate)│
+│  - App serves user traffic on port 8080                             │
+│  - DynamoDB for PR-specific data (partitioned by PR#)               │
+│  - Auto-suspends after 5 min idle                                   │
+│  - Auto-resumes on next request (<2s)                               │
+└─────────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  PR Closed                                                          │
+│                                                                     │
+│  GitHub Actions → terminate-microvm                                 │
+│                → delete DynamoDB partition (PR#N)                    │
+│                → delete S3 artifacts                                 │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
 ## Project Structure
 
@@ -53,7 +98,7 @@ terraform apply
 
 ### 2. Configure GitHub Secrets
 
-From `terraform output`, set these in your repo Settings > Secrets and variables > Actions:
+From `terraform output`, set these in repo Settings > Secrets:
 
 | Secret | Value |
 |--------|-------|
@@ -65,39 +110,21 @@ From `terraform output`, set these in your repo Settings > Secrets and variables
 
 ### 3. Test
 
-1. Create a branch, make any change under `Blog/dynamic-pr-environment/`
+1. Create a branch, change any file under `Blog/dynamic-pr-environment/`
 2. Open a PR to `master`
-3. Wait for the deploy workflow (~3 min first time)
+3. Wait for deploy workflow (~3 min first time)
 4. Click the preview URL in the PR comment
-5. Add/delete tasks to verify DynamoDB persistence
+5. Add/delete tasks to verify persistence
 6. Close the PR to trigger cleanup
 
-## How It Works
+## Cost (5 devs, 40 PRs/month, 50 min active per PR)
 
-1. **Deploy**: GitHub Actions zips code to S3, calls `update-microvm-image` (builds snapshot), then `run-microvm` (starts in <2s). Stores access token in DynamoDB, posts preview URL to PR.
-2. **Access**: Reviewer hits Lambda Function URL. Proxy validates token from DynamoDB, generates JWE auth token, forwards to MicroVM endpoint.
-3. **Runtime**: Flask app on port 8080 serves the task manager. Lifecycle hooks on port 9000 handle `/run` (config injection), `/suspend`, `/resume`, `/terminate` (data cleanup).
-4. **Cleanup**: PR closed triggers cleanup workflow. Terminates MicroVM, waits for TERMINATED state, deletes per-PR image, removes DynamoDB partition and S3 artifacts.
+| | Lambda MicroVMs | Shared Staging | EKS |
+|---|---|---|---|
+| **Total** | **$6.90/mo** | $31.65/mo | $104.65/mo |
+| **Savings** | - | 78% | 93% |
 
-## Key Details
-
-- **Per-PR images**: Each PR builds its own image (`pr-env-app-pr<number>`) to support parallel builds
-- **Immutable deploys**: New push = new image = terminate old + run new. No hot-reload.
-- **Auth**: Random 32-char hex token per PR stored in DynamoDB. Only people who see the PR comment have it.
-- **ARM only**: Lambda MicroVMs run on Graviton (arm64). Python/Node/Go apps work fine.
-- **Hooks on port 9000, app on port 8080**: Lambda routes user traffic to 8080. Hooks must be separate.
-
-## Cost
-
-For a team of 5 devs with 40 PRs/month, 50 min active per PR:
-
-| Solution | Monthly Cost |
-|----------|-------------|
-| Lambda MicroVMs | ~$12 |
-| Shared Staging (EC2 + ALB) | ~$56 |
-| EKS (namespace per PR) | ~$201 |
-
-MicroVMs run only 6.8% of the month. Suspended = $0 compute.
+Breakeven: ~5 hrs active per PR vs staging, ~16 hrs vs EKS.
 
 ## Tear Down
 
@@ -105,7 +132,3 @@ MicroVMs run only 6.8% of the month. Suspended = $0 compute.
 cd infra
 terraform destroy
 ```
-
-## Blog Post
-
-Full walkthrough: [Kill Your Staging Environment: Dynamic PR Previews with Lambda MicroVMs](link-to-blog)
