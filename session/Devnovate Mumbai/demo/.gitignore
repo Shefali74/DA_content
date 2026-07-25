@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# CDK outputs
+cdk.out/
+cdk.context.json
+.cdk.staging/
+
+# Build outputs
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Lambda response files
+/tmp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secrets (should never be committed)
+.env
+.env.local
+*.pem
+*.key
+
+# Presentation build artifacts (large binary)
+*.pptx

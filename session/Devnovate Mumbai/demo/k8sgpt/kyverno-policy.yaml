@@ -1,0 +1,41 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: block-ai-remediation-critical
+  annotations:
+    policies.kyverno.io/title: Block AI Auto-Remediation in Critical Namespaces
+    policies.kyverno.io/description: >-
+      Prevents K8sGPT auto-remediation from modifying resources in
+      critical namespaces. AI can still detect and report issues,
+      but cannot apply fixes automatically.
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: block-k8sgpt-mutations
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+                - Pod
+                - Service
+                - ConfigMap
+              namespaces:
+                - "critical"
+      preconditions:
+        all:
+          - key: "{{request.userInfo.username}}"
+            operator: AnyIn
+            value:
+              - "system:serviceaccount:k8sgpt-operator-system:k8sgpt-operator-controller-manager"
+              - "system:serviceaccount:k8sgpt-operator-system:k8sgpt-sa"
+      validate:
+        message: |
+          AI auto-remediation is BLOCKED in the '{{request.namespace}}' namespace.
+          K8sGPT detected an issue but cannot auto-fix here.
+          A human must review and apply the fix manually.
+          Resource: {{request.object.kind}}/{{request.object.metadata.name}}
+        deny: {}
