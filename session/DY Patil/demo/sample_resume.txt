@@ -1,0 +1,47 @@
+RAHUL SHARMA
+Email: rahul.sharma@email.com | Phone: +91-9876543210
+LinkedIn: linkedin.com/in/rahulsharma | GitHub: github.com/rahulsharma
+
+EDUCATION
+B.Tech in Computer Science - DY Patil University, Pune (2022 - 2026)
+CGPA: 8.2/10
+
+SKILLS
+Programming: Python, JavaScript, C++
+Frameworks: Flask, React.js
+Databases: MySQL
+Tools: Git, VS Code
+OS: Linux, Windows
+
+PROJECTS
+
+1. Todo Application (Jan 2025)
+   - Built a full-stack todo app using Flask and React
+   - Features: Add, edit, delete, mark complete
+   - Deployed on Heroku
+
+2. Weather App (Mar 2025)
+   - Created a weather application using OpenWeatherMap API
+   - Shows current weather and 5-day forecast
+   - Built with React.js
+
+3. Chat Application (Jun 2025)
+   - Real-time chat app using Socket.io
+   - Features: group chat, private messaging
+   - Node.js backend with React frontend
+
+EXPERIENCE
+
+Intern - Web Developer at LocalStartup Pvt Ltd (May 2025 - Jul 2025)
+- Worked on the company's internal dashboard
+- Fixed bugs and added new features
+- Used React and Node.js
+
+CERTIFICATIONS
+- AWS Cloud Practitioner (2024)
+- Python for Everybody - Coursera
+
+ACHIEVEMENTS
+- Participated in Smart India Hackathon 2024
+- Member of college coding club
+- Completed 100+ problems on LeetCode

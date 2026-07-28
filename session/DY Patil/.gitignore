@@ -1,0 +1,27 @@
+# Ignore presentation files
+*.pptx
+*.pptm
+*.potx
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Environment variables (never commit secrets)
+.env
