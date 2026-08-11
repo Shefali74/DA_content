@@ -9,6 +9,13 @@ Supported simulated APIs:
     - Knowledge Base Retrieve API
     - ApplyGuardrail API
 
+Supported demo features:
+    - Demo 02: CountTokens
+    - Demo 03: Knowledge Base / RAG
+    - Demo 04: Guardrails
+    - Demo 05: Model Evaluation
+    - Demo 06: Intelligent Prompt Routing
+
 IMPORTANT:
 This is a teaching/demo implementation.
 It does NOT reproduce the real Amazon Bedrock behavior exactly.
@@ -16,13 +23,15 @@ It does NOT reproduce the real Amazon Bedrock behavior exactly.
 
 import re
 import time
-import json
 
 
 class MockBedrockClient:
 
     def __init__(self):
-        print("[MOCK BEDROCK] Using local mock client. No AWS calls will be made.")
+        print(
+            "[MOCK BEDROCK] Using local mock client. "
+            "No AWS calls will be made."
+        )
 
     # =========================================================
     # CONVERSE API
@@ -42,8 +51,8 @@ class MockBedrockClient:
 
         Supports:
             - normal model responses
+            - Haiku classification
             - Guardrail evaluation
-            - LLM-as-a-Judge evaluation
             - token usage
             - stop reason
             - guardrail trace
@@ -64,10 +73,16 @@ class MockBedrockClient:
         if messages:
             last_message = messages[-1]
 
-            content = last_message.get("content", [])
+            content = last_message.get(
+                "content",
+                []
+            )
 
             if content:
-                user_text = content[0].get("text", "")
+                user_text = content[0].get(
+                    "text",
+                    ""
+                )
 
         # -----------------------------------------------------
         # Extract system prompt
@@ -121,7 +136,9 @@ class MockBedrockClient:
 
             if guardrail_result["action"] == "GUARDRAIL_INTERVENED":
 
-                blocked_response = guardrail_result["outputs"][0]["text"]
+                blocked_response = (
+                    guardrail_result["outputs"][0]["text"]
+                )
 
                 latency_ms = int(
                     (time.time() - start_time) * 1000
@@ -139,7 +156,9 @@ class MockBedrockClient:
                     },
 
                     "usage": {
-                        "inputTokens": self._estimate_tokens(user_text),
+                        "inputTokens": self._estimate_tokens(
+                            user_text
+                        ),
                         "outputTokens": self._estimate_tokens(
                             blocked_response
                         )
@@ -210,7 +229,7 @@ class MockBedrockClient:
         system_text=""
     ):
         """
-        Generate a deterministic response for the demos.
+        Generate deterministic responses for demos.
 
         This is NOT an actual LLM.
         """
@@ -218,12 +237,24 @@ class MockBedrockClient:
         model_name = self._get_model_name(modelId)
 
         # -----------------------------------------------------
+        # Demo 06: Query Classification
+        # -----------------------------------------------------
+
+        if self._is_classification_request(user_text):
+
+            classification = self._classify_query(
+                user_text
+            )
+
+            return classification
+
+        # -----------------------------------------------------
         # Demo 05: LLM-as-a-Judge
         # -----------------------------------------------------
 
-        if self._is_judge_prompt(user_text):
+        if self._is_evaluation_request(user_text):
 
-            return self._generate_mock_judge_response(
+            return self._generate_judge_response(
                 user_text
             )
 
@@ -239,120 +270,188 @@ class MockBedrockClient:
             )
 
         # -----------------------------------------------------
-        # Demo 05: Evaluation dataset questions
-        # -----------------------------------------------------
-
-        evaluation_response = self._generate_evaluation_response(
-            user_text,
-            model_name
-        )
-
-        if evaluation_response:
-
-            return evaluation_response
-
-        # -----------------------------------------------------
         # Normal IT helpdesk response
         # -----------------------------------------------------
 
         return (
             f"[MOCK RESPONSE — {model_name}]\n\n"
+
             f"User query:\n"
             f"\"{user_text}\"\n\n"
+
             "Helpdesk response:\n\n"
+
             "This is a simulated Amazon Bedrock response.\n\n"
+
             "For this IT helpdesk request, you should:\n\n"
+
             "1. Check the user's network connection.\n"
             "2. Restart the affected application or service.\n"
             "3. Verify that the required configuration is correct.\n"
             "4. Check whether there are any known system issues.\n"
             "5. If the problem continues, escalate the issue "
             "to the IT support team.\n\n"
+
             "This response is being generated in MOCK MODE "
             "because AWS Bedrock credentials are not configured."
         )
 
     # =========================================================
-    # DEMO 05: EVALUATION DATASET RESPONSES
+    # DEMO 06
+    # QUERY CLASSIFICATION
     # =========================================================
 
-    def _generate_evaluation_response(
+    def _is_classification_request(
         self,
-        user_text,
-        model_name
+        text
     ):
         """
-        Generate realistic deterministic answers for Demo 05.
-
-        These simulate Claude Haiku answering the evaluation
-        dataset questions.
+        Detect whether the prompt is asking the model
+        to classify a query as SIMPLE or COMPLEX.
         """
 
-        lower_text = user_text.lower()
+        lower_text = text.lower()
+
+        return (
+            "classify the following user query" in lower_text
+            and "simple" in lower_text
+            and "complex" in lower_text
+        )
+
+    def _classify_query(
+        self,
+        prompt
+    ):
+        """
+        Simulate Haiku's query classification.
+
+        This is intentionally deterministic so Demo 06
+        produces predictable results.
+        """
 
         # -----------------------------------------------------
-        # VPN password
+        # Extract actual query from classifier prompt
         # -----------------------------------------------------
 
-        if "reset my vpn password" in lower_text:
+        query = ""
 
-            return (
-                f"[MOCK RESPONSE — {model_name}]\n\n"
-                "To reset your VPN password:\n"
-                "1. Go to the IT portal at "
-                "portal.company.com/vpn.\n"
-                "2. Click 'Reset Password'.\n"
-                "3. Enter your employee ID.\n"
-                "4. Follow the email verification steps.\n\n"
-                "Your new password should take about 15 minutes "
-                "to propagate."
-            )
+        match = re.search(
+            r"Query:\s*(.*)",
+            prompt,
+            re.IGNORECASE | re.DOTALL
+        )
 
-        # -----------------------------------------------------
-        # Work from home
-        # -----------------------------------------------------
+        if match:
+            query = match.group(1).strip()
 
-        if "work from home policy" in lower_text:
-
-            return (
-                f"[MOCK RESPONSE — {model_name}]\n\n"
-                "Employees can work from home up to 3 days per week.\n\n"
-                "WFH days must be pre-approved by your manager "
-                "through the HR portal.\n\n"
-                "Core hours from 10am to 4pm must be maintained "
-                "regardless of location."
-            )
+        lower_query = query.lower()
 
         # -----------------------------------------------------
-        # Production access
+        # Strong indicators of complexity
         # -----------------------------------------------------
 
-        if "production environment" in lower_text:
+        complex_keywords = [
+            "compare",
+            "comparison",
+            "across",
+            "multi-region",
+            "multi region",
+            "disaster recovery",
+            "dependencies",
+            "failover",
+            "migration plan",
+            "migration",
+            "rollback",
+            "phased timeline",
+            "architecture",
+            "design",
+            "analyze",
+            "analysis",
+            "strategy",
+            "implementation plan",
+            "multiple regions",
+            "multiple systems",
+            "integrate",
+            "integration"
+        ]
 
-            return (
-                f"[MOCK RESPONSE — {model_name}]\n\n"
-                "Production access requires:\n"
-                "1. Completing Security Awareness training.\n"
-                "2. Getting manager approval.\n"
-                "3. Submitting a JIRA ticket to the Platform team.\n"
-                "4. Completing the access review with the Security team.\n\n"
-                "Typical turnaround is 3-5 business days."
-            )
+        # -----------------------------------------------------
+        # Multi-step indicators
+        # -----------------------------------------------------
 
-        return None
+        multi_step_keywords = [
+            "and what's",
+            "and what",
+            "including",
+            "considering",
+            "steps",
+            "workflow",
+            "differences",
+            "recommend",
+            "recommended"
+        ]
+
+        complex_score = 0
+
+        for keyword in complex_keywords:
+
+            if keyword in lower_query:
+                complex_score += 2
+
+        for keyword in multi_step_keywords:
+
+            if keyword in lower_query:
+                complex_score += 1
+
+        # Long queries are more likely to require reasoning
+        if len(query.split()) > 25:
+            complex_score += 2
+
+        # -----------------------------------------------------
+        # Simple lookup-style queries
+        # -----------------------------------------------------
+
+        simple_patterns = [
+            "what are the office hours",
+            "how do i reset my password",
+            "where is the cafeteria",
+            "what is the wifi password",
+            "what is the wifi",
+            "office hours",
+            "reset my password",
+            "where is"
+        ]
+
+        if any(
+            pattern in lower_query
+            for pattern in simple_patterns
+        ):
+            return "SIMPLE"
+
+        # -----------------------------------------------------
+        # Final classification
+        # -----------------------------------------------------
+
+        if complex_score >= 2:
+            return "COMPLEX"
+
+        return "SIMPLE"
 
     # =========================================================
-    # DEMO 05: DETECT JUDGE PROMPT
+    # DEMO 05
+    # LLM-AS-A-JUDGE
     # =========================================================
 
-    @staticmethod
-    def _is_judge_prompt(user_text):
+    def _is_evaluation_request(
+        self,
+        text
+    ):
         """
-        Detect whether the current Converse request is the
-        LLM-as-a-Judge request from Demo 05.
+        Detect whether the prompt is an evaluation/judge
+        prompt from Demo 05.
         """
 
-        lower_text = user_text.lower()
+        lower_text = text.lower()
 
         return (
             "you are an evaluation judge" in lower_text
@@ -360,85 +459,37 @@ class MockBedrockClient:
             and "model response to evaluate" in lower_text
         )
 
-    # =========================================================
-    # DEMO 05: MOCK LLM-AS-A-JUDGE
-    # =========================================================
-
-    def _generate_mock_judge_response(
+    def _generate_judge_response(
         self,
-        judge_prompt
+        prompt
     ):
         """
         Simulate Claude Sonnet acting as an evaluator.
 
-        The mock examines the model response contained in the
-        judge prompt and returns JSON scores.
-
-        This is NOT a real LLM evaluation.
+        Returns valid JSON matching Demo 05.
         """
 
-        lower_prompt = judge_prompt.lower()
+        lower_prompt = prompt.lower()
 
         # -----------------------------------------------------
-        # Default high-quality evaluation
+        # Determine approximate quality
         # -----------------------------------------------------
 
+        # Default strong score for the mock model
         relevance = 5
         accuracy = 5
-        completeness = 5
+        completeness = 4
         conciseness = 5
 
-        reasoning = (
-            "The response is relevant, accurate, complete, "
-            "and appropriately concise compared with the ground truth."
-        )
-
-        # -----------------------------------------------------
-        # Detect the three evaluation examples
-        # -----------------------------------------------------
-
-        if "reset my vpn password" in lower_prompt:
-
-            relevance = 5
-            accuracy = 5
-            completeness = 5
-            conciseness = 5
-
-            reasoning = (
-                "The response correctly explains the VPN password "
-                "reset process and includes the required steps and "
-                "propagation time."
-            )
-
-        elif "work from home policy" in lower_prompt:
-
-            relevance = 5
-            accuracy = 5
-            completeness = 5
-            conciseness = 5
-
-            reasoning = (
-                "The response accurately covers the three-day WFH "
-                "limit, manager approval, HR portal requirement, "
-                "and core working hours."
-            )
-
-        elif "production environment" in lower_prompt:
-
-            relevance = 5
-            accuracy = 5
-            completeness = 5
-            conciseness = 5
-
-            reasoning = (
-                "The response correctly covers training, manager "
-                "approval, the JIRA request, security review, and "
-                "the expected turnaround time."
-            )
-
-        # -----------------------------------------------------
-        # Calculate average
-        # -----------------------------------------------------
+        # If the response appears generic/mock,
+        # reduce completeness slightly.
+        if (
+            "simulated amazon bedrock response" in lower_prompt
+            or "check the user's network connection" in lower_prompt
+        ):
+            relevance = 3
+            accuracy = 3
+            completeness = 2
 
         overall = (
             relevance
@@ -447,18 +498,18 @@ class MockBedrockClient:
             + conciseness
         ) / 4
 
-        scores = {
-            "relevance": relevance,
-            "accuracy": accuracy,
-            "completeness": completeness,
-            "conciseness": conciseness,
-            "overall": overall,
-            "reasoning": reasoning
-        }
-
-        return json.dumps(
-            scores,
-            indent=4
+        return (
+            "{\n"
+            f'    "relevance": {relevance},\n'
+            f'    "accuracy": {accuracy},\n'
+            f'    "completeness": {completeness},\n'
+            f'    "conciseness": {conciseness},\n'
+            f'    "overall": {overall:.2f},\n'
+            '    "reasoning": '
+            '"The response is relevant and concise, '
+            'but some key details from the ground truth '
+            'may be missing."\n'
+            "}"
         )
 
     # =========================================================
@@ -471,7 +522,7 @@ class MockBedrockClient:
         model_name
     ):
         """
-        Generate a deterministic answer from the retrieved
+        Generate a deterministic answer from retrieved
         Knowledge Base context.
 
         This makes Demo 03 more realistic without requiring
@@ -493,13 +544,18 @@ class MockBedrockClient:
 
                 return (
                     f"[MOCK RAG RESPONSE — {model_name}]\n\n"
+
                     "Employees may request a replacement laptop "
                     "when their current device is damaged, defective, "
                     "or more than four years old.\n\n"
+
                     "To request a replacement, create an IT Service "
                     "Desk ticket and select:\n\n"
+
                     "Hardware > Laptop Replacement\n\n"
+
                     "The IT Service Desk will review the request.\n\n"
+
                     "Source: laptop_replacement_policy.txt"
                 )
 
@@ -517,12 +573,15 @@ class MockBedrockClient:
 
                 return (
                     f"[MOCK RAG RESPONSE — {model_name}]\n\n"
+
                     "Employees are allowed to work from home "
                     "up to three days per week, subject to manager "
                     "approval and business requirements.\n\n"
+
                     "Employees should coordinate their WFH schedule "
                     "with their manager and remain available during "
                     "normal working hours.\n\n"
+
                     "Source: work_from_home_policy.txt"
                 )
 
@@ -539,13 +598,18 @@ class MockBedrockClient:
 
                 return (
                     f"[MOCK RAG RESPONSE — {model_name}]\n\n"
+
                     "Access to the production environment requires "
                     "manager approval and a valid business justification.\n\n"
+
                     "Employees must submit a production-access request "
                     "through the IT Service Desk.\n\n"
+
                     "The security team reviews the request before "
                     "access is granted.\n\n"
+
                     "Production credentials must not be shared.\n\n"
+
                     "Source: production_access_policy.txt"
                 )
 
@@ -555,6 +619,7 @@ class MockBedrockClient:
 
         return (
             f"[MOCK RAG RESPONSE — {model_name}]\n\n"
+
             "I don't have information about that in our "
             "knowledge base."
         )
@@ -672,9 +737,12 @@ class MockBedrockClient:
                     "Employees may request a replacement laptop "
                     "when their current device is damaged, defective, "
                     "or more than four years old.\n\n"
+
                     "To request a replacement, employees should create "
                     "an IT Service Desk ticket and select:\n\n"
+
                     "Hardware > Laptop Replacement\n\n"
+
                     "The IT Service Desk reviews the request."
                 ),
 
@@ -695,6 +763,7 @@ class MockBedrockClient:
                     "Employees are allowed to work from home up to "
                     "three days per week, subject to manager approval "
                     "and business requirements.\n\n"
+
                     "Employees should coordinate their WFH schedule "
                     "with their manager and remain available during "
                     "normal working hours."
@@ -716,10 +785,13 @@ class MockBedrockClient:
                 "content": (
                     "Access to the production environment requires "
                     "manager approval and a valid business justification.\n\n"
+
                     "Employees must submit a production-access request "
                     "through the IT Service Desk.\n\n"
+
                     "The security team reviews the request before "
                     "access is granted.\n\n"
+
                     "Production credentials must not be shared."
                 ),
 
@@ -1131,7 +1203,9 @@ class MockBedrockClient:
     # =========================================================
 
     @staticmethod
-    def _estimate_tokens(text):
+    def _estimate_tokens(
+        text
+    ):
         """
         Very simple token approximation.
 
@@ -1144,7 +1218,9 @@ class MockBedrockClient:
         return len(text.split())
 
     @staticmethod
-    def _get_model_name(model_id):
+    def _get_model_name(
+        model_id
+    ):
         """
         Convert model ID into a readable mock model name.
         """
