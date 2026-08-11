@@ -52,7 +52,6 @@ AWS Bedrock credentials are not configured.
         input_tokens = len(query.split()) + 30
         output_tokens = len(response_text.split())
 
-        # Simulate a small amount of processing time
         latency = time.time() - start_time
 
         return {
@@ -72,8 +71,51 @@ AWS Bedrock credentials are not configured.
                 "totalTokens": input_tokens + output_tokens
             },
             "stopReason": "end_turn",
-
-            # Extra information that can be useful for our demo
             "_mock": True,
             "_latency": latency
+        }
+
+    # ---------------------------------------------------------
+    # MOCK COUNT TOKENS
+    # ---------------------------------------------------------
+
+    def count_tokens(self, modelId, input):
+        """
+        Simulate Amazon Bedrock CountTokens API.
+
+        The real API counts the tokens that would be sent
+        to the model before inference.
+
+        Our mock uses a simple word-based approximation.
+        """
+
+        total_tokens = 0
+
+        # Count system prompt tokens
+        converse_input = input.get("converse", {})
+
+        system_messages = converse_input.get("system", [])
+
+        for system_message in system_messages:
+            text = system_message.get("text", "")
+            total_tokens += len(text.split())
+
+        # Count user/assistant messages
+        messages = converse_input.get("messages", [])
+
+        for message in messages:
+            content = message.get("content", [])
+
+            for content_item in content:
+                text = content_item.get("text", "")
+                total_tokens += len(text.split())
+
+        # Add a small overhead to make the simulation
+        # closer to real token counting.
+        total_tokens += 5
+
+        return {
+            "inputTokens": total_tokens,
+            "_mock": True,
+            "_modelId": modelId
         }
