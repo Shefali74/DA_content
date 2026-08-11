@@ -9,17 +9,63 @@ Production Lessons:
 - Citations = audit trail for compliance
 - Without KB, the model WILL make things up about your company
 """
-import boto3
+import os
+import sys
 import json
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.markdown import Markdown
+
 from config import REGION, MODEL_SONNET, KNOWLEDGE_BASE_ID
 
+
+# ---------------------------------------------------------
+# MOCK / AWS MODE
+# ---------------------------------------------------------
+
+USE_MOCK = os.getenv(
+    "USE_MOCK_BEDROCK",
+    "true"
+).lower() == "true"
+
+
+# 03_knowledge_base_rag.py is inside demo/
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+
+sys.path.insert(0, PROJECT_ROOT)
+
+
+if USE_MOCK:
+
+    # Use our local mock implementation.
+    from mock_bedrock import MockBedrockClient
+
+    mock_client = MockBedrockClient()
+
+    bedrock_agent = mock_client
+    bedrock_runtime = mock_client
+
+else:
+
+    # Use real AWS services.
+    import boto3
+
+    bedrock_agent = boto3.client(
+        "bedrock-agent-runtime",
+        region_name=REGION
+    )
+
+    bedrock_runtime = boto3.client(
+        "bedrock-runtime",
+        region_name=REGION
+    )
+
+
 console = Console()
-bedrock_agent = boto3.client("bedrock-agent-runtime", region_name=REGION)
-bedrock_runtime = boto3.client("bedrock-runtime", region_name=REGION)
 
 
 def query_knowledge_base(query: str, num_results: int = 3) -> dict:
