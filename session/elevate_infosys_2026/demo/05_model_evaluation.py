@@ -10,15 +10,59 @@ Production Lessons:
 - LLM-as-Judge is cheap and catches quality regressions
 - Evaluate on YOUR data, not generic benchmarks
 """
-import boto3
+import os
+import sys
 import json
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+
 from config import REGION, MODEL_SONNET, MODEL_HAIKU
 
+
+# =========================================================
+# MOCK / AWS MODE
+# =========================================================
+
+USE_MOCK = os.getenv(
+    "USE_MOCK_BEDROCK",
+    "true"
+).lower() == "true"
+
+
+# 05_model_evaluation.py is inside demo/
+# Go one level up to elevate_infosys_2026/
+
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.abspath(__file__)
+    )
+)
+
+sys.path.insert(
+    0,
+    PROJECT_ROOT
+)
+
+
+if USE_MOCK:
+
+    from mock_bedrock import MockBedrockClient
+
+    client = MockBedrockClient()
+
+else:
+
+    import boto3
+
+    client = boto3.client(
+        "bedrock-runtime",
+        region_name=REGION
+    )
+
+
 console = Console()
-client = boto3.client("bedrock-runtime", region_name=REGION)
 
 
 # Test dataset - questions with known ground truth answers
