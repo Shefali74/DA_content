@@ -9,15 +9,56 @@ Production Lessons:
 - The max_tokens DEFAULT is a silent budget killer
 - Optimizing prompts from 500 tokens to 200 tokens = 60% savings on input
 """
-import boto3
+import os
+import sys
 import json
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+
 from config import REGION, MODEL_SONNET, MODEL_HAIKU, PRICING
 
+
+# ---------------------------------------------------------
+# MOCK / AWS MODE
+# ---------------------------------------------------------
+
+# Default to MOCK mode because we don't have AWS credentials.
+USE_MOCK = os.getenv(
+    "USE_MOCK_BEDROCK",
+    "true"
+).lower() == "true"
+
+
+# 02_count_tokens.py is inside demo/
+# Go one level up to elevate_infosys_2026/
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+
+sys.path.insert(0, PROJECT_ROOT)
+
+
+if USE_MOCK:
+
+    # Use our local mock instead of Amazon Bedrock.
+    from mock_bedrock import MockBedrockClient
+
+    client = MockBedrockClient()
+
+else:
+
+    # Use real Amazon Bedrock.
+    import boto3
+
+    client = boto3.client(
+        "bedrock-runtime",
+        region_name=REGION
+    )
+
+
 console = Console()
-client = boto3.client("bedrock-runtime", region_name=REGION)
 
 # CountTokens requires base model IDs (not cross-region inference profiles)
 COUNT_TOKENS_MODEL_SONNET = "anthropic.claude-sonnet-4-5-20250929-v1:0"
