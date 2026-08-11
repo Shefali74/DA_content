@@ -3,6 +3,10 @@
 > Building Generative AI Applications at Production Scale
 > AWS Elevate Days 2026
 
+> **Built with Kiro Crew:** https://builder.aws.com/content/3HWzCQeYfWjDxsyKVsmKzVPne7w/what-is-kiro-crew-a-hands-on-guide-to-ai-agents-that-learn-fix-and-scale-your-code
+
+> **Linkedin:** https://www.linkedin.com/in/jatinmehrotra/
+
 ## What This Is
 
 A hands-on demo showing how to build a production-grade **IT Helpdesk Agent** using Amazon Bedrock. Each script demonstrates a specific production pattern with real cost implications.
