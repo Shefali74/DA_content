@@ -16,6 +16,7 @@ It does NOT reproduce the real Amazon Bedrock behavior exactly.
 
 import re
 import time
+import json
 
 
 class MockBedrockClient:
@@ -42,6 +43,7 @@ class MockBedrockClient:
         Supports:
             - normal model responses
             - Guardrail evaluation
+            - LLM-as-a-Judge evaluation
             - token usage
             - stop reason
             - guardrail trace
@@ -216,7 +218,17 @@ class MockBedrockClient:
         model_name = self._get_model_name(modelId)
 
         # -----------------------------------------------------
-        # RAG / Knowledge Base context
+        # Demo 05: LLM-as-a-Judge
+        # -----------------------------------------------------
+
+        if self._is_judge_prompt(user_text):
+
+            return self._generate_mock_judge_response(
+                user_text
+            )
+
+        # -----------------------------------------------------
+        # Demo 03: RAG / Knowledge Base context
         # -----------------------------------------------------
 
         if "Context:" in user_text:
@@ -225,6 +237,19 @@ class MockBedrockClient:
                 user_text,
                 model_name
             )
+
+        # -----------------------------------------------------
+        # Demo 05: Evaluation dataset questions
+        # -----------------------------------------------------
+
+        evaluation_response = self._generate_evaluation_response(
+            user_text,
+            model_name
+        )
+
+        if evaluation_response:
+
+            return evaluation_response
 
         # -----------------------------------------------------
         # Normal IT helpdesk response
@@ -245,6 +270,195 @@ class MockBedrockClient:
             "to the IT support team.\n\n"
             "This response is being generated in MOCK MODE "
             "because AWS Bedrock credentials are not configured."
+        )
+
+    # =========================================================
+    # DEMO 05: EVALUATION DATASET RESPONSES
+    # =========================================================
+
+    def _generate_evaluation_response(
+        self,
+        user_text,
+        model_name
+    ):
+        """
+        Generate realistic deterministic answers for Demo 05.
+
+        These simulate Claude Haiku answering the evaluation
+        dataset questions.
+        """
+
+        lower_text = user_text.lower()
+
+        # -----------------------------------------------------
+        # VPN password
+        # -----------------------------------------------------
+
+        if "reset my vpn password" in lower_text:
+
+            return (
+                f"[MOCK RESPONSE — {model_name}]\n\n"
+                "To reset your VPN password:\n"
+                "1. Go to the IT portal at "
+                "portal.company.com/vpn.\n"
+                "2. Click 'Reset Password'.\n"
+                "3. Enter your employee ID.\n"
+                "4. Follow the email verification steps.\n\n"
+                "Your new password should take about 15 minutes "
+                "to propagate."
+            )
+
+        # -----------------------------------------------------
+        # Work from home
+        # -----------------------------------------------------
+
+        if "work from home policy" in lower_text:
+
+            return (
+                f"[MOCK RESPONSE — {model_name}]\n\n"
+                "Employees can work from home up to 3 days per week.\n\n"
+                "WFH days must be pre-approved by your manager "
+                "through the HR portal.\n\n"
+                "Core hours from 10am to 4pm must be maintained "
+                "regardless of location."
+            )
+
+        # -----------------------------------------------------
+        # Production access
+        # -----------------------------------------------------
+
+        if "production environment" in lower_text:
+
+            return (
+                f"[MOCK RESPONSE — {model_name}]\n\n"
+                "Production access requires:\n"
+                "1. Completing Security Awareness training.\n"
+                "2. Getting manager approval.\n"
+                "3. Submitting a JIRA ticket to the Platform team.\n"
+                "4. Completing the access review with the Security team.\n\n"
+                "Typical turnaround is 3-5 business days."
+            )
+
+        return None
+
+    # =========================================================
+    # DEMO 05: DETECT JUDGE PROMPT
+    # =========================================================
+
+    @staticmethod
+    def _is_judge_prompt(user_text):
+        """
+        Detect whether the current Converse request is the
+        LLM-as-a-Judge request from Demo 05.
+        """
+
+        lower_text = user_text.lower()
+
+        return (
+            "you are an evaluation judge" in lower_text
+            and "ground truth answer" in lower_text
+            and "model response to evaluate" in lower_text
+        )
+
+    # =========================================================
+    # DEMO 05: MOCK LLM-AS-A-JUDGE
+    # =========================================================
+
+    def _generate_mock_judge_response(
+        self,
+        judge_prompt
+    ):
+        """
+        Simulate Claude Sonnet acting as an evaluator.
+
+        The mock examines the model response contained in the
+        judge prompt and returns JSON scores.
+
+        This is NOT a real LLM evaluation.
+        """
+
+        lower_prompt = judge_prompt.lower()
+
+        # -----------------------------------------------------
+        # Default high-quality evaluation
+        # -----------------------------------------------------
+
+        relevance = 5
+        accuracy = 5
+        completeness = 5
+        conciseness = 5
+
+        reasoning = (
+            "The response is relevant, accurate, complete, "
+            "and appropriately concise compared with the ground truth."
+        )
+
+        # -----------------------------------------------------
+        # Detect the three evaluation examples
+        # -----------------------------------------------------
+
+        if "reset my vpn password" in lower_prompt:
+
+            relevance = 5
+            accuracy = 5
+            completeness = 5
+            conciseness = 5
+
+            reasoning = (
+                "The response correctly explains the VPN password "
+                "reset process and includes the required steps and "
+                "propagation time."
+            )
+
+        elif "work from home policy" in lower_prompt:
+
+            relevance = 5
+            accuracy = 5
+            completeness = 5
+            conciseness = 5
+
+            reasoning = (
+                "The response accurately covers the three-day WFH "
+                "limit, manager approval, HR portal requirement, "
+                "and core working hours."
+            )
+
+        elif "production environment" in lower_prompt:
+
+            relevance = 5
+            accuracy = 5
+            completeness = 5
+            conciseness = 5
+
+            reasoning = (
+                "The response correctly covers training, manager "
+                "approval, the JIRA request, security review, and "
+                "the expected turnaround time."
+            )
+
+        # -----------------------------------------------------
+        # Calculate average
+        # -----------------------------------------------------
+
+        overall = (
+            relevance
+            + accuracy
+            + completeness
+            + conciseness
+        ) / 4
+
+        scores = {
+            "relevance": relevance,
+            "accuracy": accuracy,
+            "completeness": completeness,
+            "conciseness": conciseness,
+            "overall": overall,
+            "reasoning": reasoning
+        }
+
+        return json.dumps(
+            scores,
+            indent=4
         )
 
     # =========================================================
@@ -568,7 +782,6 @@ class MockBedrockClient:
 
         for score, document in scored_documents[:3]:
 
-            # Simple normalized score
             relevance_score = min(
                 0.95,
                 0.5 + (score * 0.1)
