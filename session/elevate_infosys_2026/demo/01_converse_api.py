@@ -9,15 +9,50 @@ Production Lessons:
 - Cross-Region Inference (CRIS) gives you higher availability at no extra cost
 - Different models for different tasks = cost optimization
 """
-import boto3
+import os
+import sys
 import time
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+
 from config import REGION, MODEL_SONNET, MODEL_HAIKU, MODEL_SONNET_CRIS, PRICING
 
+
+# ---------------------------------------------------------
+# MOCK / AWS MODE
+# ---------------------------------------------------------
+# Default is MOCK mode because we currently don't have AWS.
+USE_MOCK = os.getenv("USE_MOCK_BEDROCK", "true").lower() == "true"
+
+
+# 01_converse_api.py is inside the demo/ folder.
+# Go one level up to elevate_infosys_2026/
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+
+sys.path.insert(0, PROJECT_ROOT)
+
+
+if USE_MOCK:
+    # Use our local mock instead of Amazon Bedrock
+    from mock_bedrock import MockBedrockClient
+
+    client = MockBedrockClient()
+
+else:
+    # Use real Amazon Bedrock
+    import boto3
+
+    client = boto3.client(
+        "bedrock-runtime",
+        region_name=REGION
+    )
+
+
 console = Console()
-client = boto3.client("bedrock-runtime", region_name=REGION)
 
 # The same query - we'll send it to different models
 QUERY = "A user's laptop is not connecting to the corporate VPN after a Windows update. What troubleshooting steps should I suggest?"
